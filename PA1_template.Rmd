@@ -1,25 +1,158 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Reproducible Research - Personal Movement Tracking"
+date: "24 February 2017"
+output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Initial preparation
+
+Ensure first that all additional packages are loaded for the exercise:
+
+```{r}
+if(!require(ggplot2)){
+    install.packages("ggplot2")
+    library(ggplot2)
+}
+if(!require(lattice)){
+    install.packages("lattice")
+    library(lattice)
+}
+```
 
 ## Loading and preprocessing the data
 
+The data to be used in this project can be found [here](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip "Activity data") in compressed format. The code below downloads the data into the current working directory, unzips it and puts it into a dataframe for subsequent processing.
 
+```{r}
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip", "activity.zip", quiet = TRUE)
+unzip("activity.zip", files = "activity.csv", overwrite = TRUE)
+dfRawData <- read.csv("activity.csv")
+```
 
 ## What is mean total number of steps taken per day?
 
+1. Calculate the total number of steps taken per day.
 
+To determine this, create a dataframe summarising the data by date, omitting missing values.
+
+```{r}
+dfStepsByDate <- aggregate(steps ~ date, data = dfRawData, sum, na.action = na.omit)
+dfStepsByDate
+```
+
+2. Make a histogram of the total number of steps taken each day
+
+Using the data created in the last part, this will generate a barplot with 0 spacing, effectively creating a histogram:
+
+```{r}
+with(dfStepsByDate, barplot(steps, names.arg = date, space = 0, las = 2, cex.names = 0.6, ylab = "Total number of steps", main = "Total number of steps taken each day", cex.axis = 0.7, col = "pink"))
+```
+
+3. Calculate and report the mean and median of the total number of steps taken per day
+
+To achieve this, use the summary function, ensuring sufficient significant figures are used.
+
+```{r}
+summary(dfStepsByDate$steps, digits = 5)
+```
+
+The mean is 10,766 steps and the median is 10,765 steps.
 
 ## What is the average daily activity pattern?
 
+1. Make a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis).
 
+Create a dataframe containing the number of steps summarised by interval, and plot this:
+
+```{r}
+dfStepsByInterval <- aggregate(steps ~ interval, data = dfRawData, mean, na.action = na.omit)
+with(dfStepsByInterval, plot(interval, steps, type = "l", xlab = "5-minute interval", ylab = "Average number of steps", main = "Average daily activity pattern"))
+```
+
+2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+This is determined by building a dataframe with the required data, sorting by the number of steps in reverse order, and choosing the top record:
+
+```{r}
+dfTotalStepsByInterval <- aggregate(steps ~ interval, data = dfRawData, sum, na.action = na.omit)
+head(dfTotalStepsByInterval[order(-dfTotalStepsByInterval$steps),], 1)
+```
+
+The 5-minute interval containing the maximum number of steps is therefore 08:35.
 
 ## Imputing missing values
 
+1. Calculate and report the total number of missing values in the dataset
 
+To do this, use the apply function with is.na to check all columns for NAs:
+
+```{r}
+apply(dfRawData, 2, function(x) sum(is.na(x)))
+```
+
+It can be seen that 2,304 rows contain missing data.
+
+2. Devise a strategy for filling in all of the missing values in the dataset.
+
+The objective is to fill all missing values with the average number of steps for the relevant 5-minute interval. The strategy adopted was:
+
+* Build a dataframe which is the result of a merge between the raw data and the summary of average steps by interval
+* Copy the average value across to the steps column where there is a missing value
+
+3.Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+This code implements the above strategy:
+
+```{r}
+dfMergedRawData <- setNames(merge(dfRawData, dfStepsByInterval, by = "interval"), c("interval","steps","date","averageSteps"))
+dfMergedRawData$steps[is.na(dfMergedRawData$steps)] <- dfMergedRawData$averageSteps
+```
+
+The warning message can be ignored.
+
+4. Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day.
+
+Again, use barplot to generate the required histogram:
+
+```{r}
+dfAdjustedStepsByDate <- aggregate(steps ~ date, data = dfMergedRawData, sum)
+with(dfAdjustedStepsByDate, barplot(steps, names.arg = format(as.Date(date), "%b %e"), space = 0, las = 2, cex.names = 0.6, xlab = "Day in 2012", ylab = "Total number of steps", main = "Adjusted total number of steps each day", col = "Green"))
+```
+
+The mean and median can be found as before:
+
+```{r}
+summary(dfAdjustedStepsByDate$steps, digits = 5)
+```
+
+which gives a mean of 9,371 and median of 10,395. Both have reduced, which is due to the increased number of data points being considered.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+1. Create a new factor variable in the dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+
+```{r}
+dfMergedRawData$dayType <- as.factor(ifelse(weekdays(as.Date(dfMergedRawData$date)) %in% c("Saturday","Sunday"), "weekend", "weekday"))
+```
+
+2. Make a panel plot containing a time series plot of the 5-minute interval and the average number of steps taken, averaged across all weekday days or weekend days.
+
+This plot is best done using the lattice library to allow easy stacking of the plots and hence easy comparison.
+
+First, build the required dataframe:
+
+```{r}
+dfStepsByDayType <- aggregate(steps ~ interval + dayType, data = dfMergedRawData, mean)
+```
+
+Now plot the two day types stacked:
+
+```{r}
+attach(dfStepsByDayType)
+xyplot(steps ~ interval|dayType, main = "Average number of steps per 5-minute interval", xlab = "Interval", ylab = "Number of steps", layout = c(1,2), type = "l")
+```
+
